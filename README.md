@@ -4,6 +4,8 @@ This project investigates food accessibility, nutritional quality, and socioecon
 
 The primary objective is to construct a reproducible, modular data wrangling workflow that transforms messy, real-world datasets into clean, analysis-ready outputs suitable for investigating food access inequities.
 
+
+
 <div align="center">
 
 ![MIT License](https://img.shields.io/badge/license-MIT-yellow.svg)
