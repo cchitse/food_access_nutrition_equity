@@ -233,9 +233,10 @@ This project is for academic purposes. Data sources retain their original licens
 
 ## 📝 References
 
-1. USDA Economic Research Service. (2023). Food Access Research Atlas.
-2. CORGIS Dataset Project. County Demographics and Food Nutrition datasets.
-3. Howisonlab tutorials for pandas methodology (howisonlab.github.io)
+- [USDA Economic Research Service. (2023). Food Access Research Atlas.](https://www.ers.usda.gov/data-products/food-access-research-atlas/download-the-data)
+- [CORGIS Dataset Project. County Demographics](https://corgis-edu.github.io/corgis/csv/county_demographics/)
+- [CORGIS Dataset Project. Food Nutrition](https://corgis-edu.github.io/corgis/csv/food/)
+- [Howisonlab tutorials for pandas methodology (howisonlab.github.io)](https://howisonlab.github.io/datawrangling/current/python_pandas/python_pandas_intro.html)
 
 ---
 
