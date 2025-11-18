@@ -13,7 +13,7 @@ The primary objective is to construct a reproducible data wrangling workflow tha
 <div align="center">
 
 ![MIT License](https://img.shields.io/badge/license-MIT-yellow.svg)
-![Python](https://img.shields.io/badge/Python-3.8+-3776AB.svg?logo=python&logoColor=white)
+[![Python](https://img.shields.io/badge/Python-3.8+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/downloads/release/python-380/)
 ![SQL](https://img.shields.io/badge/SQL-Database-CC2927.svg?logo=microsoftsqlserver&logoColor=white)
 ![R](https://img.shields.io/badge/R-4.0+-276DC3.svg?logo=r&logoColor=white)
 ![Excel](https://img.shields.io/badge/Excel-2016+-217346.svg?logo=microsoftexcel&logoColor=white)
