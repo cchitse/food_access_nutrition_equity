@@ -219,9 +219,9 @@ This project was completed as part of a data wrangling course, demonstrating pro
 
 ## 📝 Author
 
-cchitse
+cchitse(Jason C)
 
-## 📝 License
+## 📝 MIT License
 
 This project is for academic purposes. Data sources retain their original licensing.
 
