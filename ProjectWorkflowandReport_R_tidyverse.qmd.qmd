@@ -1,0 +1,131 @@
+---
+title: "Food Access & Nutrition Equity in Texas - Python pandas"
+subtitle: "Data Wrangling - Project Workflow and Report (Pairs)"
+date: today
+author: 
+  - Chi-Tse Chiang(cc79734)
+  - Cian-Rong Chen(cc)
+format:
+  html:
+    toc: true
+    embed-resources: true
+mainfont: TeX Gyre Schola
+monofont: JetBrainsMono Nerd Font
+mathfont: TeX Gyre Schola Math
+---
+
+# Summary
+
+This project aims to develop a data wrangling pipeline that integrates three datasets related to **food access**, **nutritional quality**, and **socioeconomic disparities** in Texas. Using data from the ***USDA Food Access Research Atlas***, ***CORGIS County Demographics dataset***, and ***CORGIS Food Nutrition*** dataset. The pipeline is implemented across four technical environments:
+
+- Python with Pandas
+- R with tidyverse
+- SQL
+- Excel
+
+The resulting clean dataset enables exploration of how food accessibility in Texas intersects with nutritional availability and demographic factors such as poverty or race/ethnicity. This work emphasizes the technical process of data wrangling and reproducible pipeline development, providing a foundation for future research into food security and health equity disparities across Texas communities.
+
+# Data Sources
+
+## USDA Food Access Research Atlas
+
+**Source**: [USDA Data Products](https://www.ers.usda.gov/data-products/food-access-research-atlas)
+
+![](FoodAccessResearchAtlas_datasource.png)
+[72535rows x 147 columns]
+
+Provides census-tract-level indicators of supermarket accessibility and food access challenges for different demographic groups. Includes population, housing, income, race, SNAP benefits, and geographic accessibility measures (e.g., low-income populations living >1 mile from a grocery store).
+
+**Wrangling Issues**:
+
+- Very wide (147 columns) and long (72,000+ rows) dataset requiring subsetting to 10–15 meaningful columns
+- Needs standardization of county and state names for **merging**.
+- Requires treatment of missing or 0 placeholder values
+- Census tract-level data must be aggregated to county level to match other datasets
+
+## U.S. County Demographics(From 2010s)
+
+**Source**: [CORGIS Dataset Project, County Demographics](https://corgis-edu.github.io/corgis/csv/county_demographics/)
+
+![](County_demographics.png)
+[3140rows x 43 columns]
+
+County-level data from 2010–2019 across the U.S., including age distribution, education, employment, ethnicity, household income, housing characteristics, and health-related statistics like travel time and veteran status.
+
+**Wrangling Issues**:
+
+- **Filtering** to only Texas counties from national dataset.
+- **Missing values** encoded as -1 need identification and handling.
+- Long dot-separated column names (e.g., Ethnicities.White Alone) require **renaming** and flattening for usability.
+- County and state name standardization needed to **match** with USDA Food Access Atlas
+
+## USDA Food Composition 
+
+**Source**: [CORGIS Dataset Project, Food](https://corgis-edu.github.io/corgis/csv/food/)
+
+![](Food_datasource.png)
+[7084rows x 38columns] 
+
+Contains nutritional breakdowns of thousands of foods, with fields for macronutrients (protein, fat, carbohydrates), vitamins (A, C, B12, etc.), and minerals (calcium, iron, magnesium). Each row represents a distinct food item.
+
+**Wrangling Issues**:
+
+- Contains 60+ nutrient columns requiring reduction to 5–10 most relevant variables.
+- Food names contain **formatting synonyms** (e.g., "Milk, human" vs "Human milk") requiring text standardization.
+- **Grouping** by food type (e.g., "Dairy", "Meat", "Vegetables") for analysis.
+- Measurements use different units (grams, mg, mcg) that must be documented for proper interpretation.
+
+
+# Selected Columns
+
+##USDA Food Access Research Atlas (10 columns)
+
+We retain these 11 columns from the original 147 to capture essential food access metrics while eliminating redundancy. The selected variables focus on the standard 1-mile threshold for urban areas and 10-mile threshold for rural areas, as this represents the USDA's primary food desert definition. We keep only the two largest racial/ethnic minority groups in Texas (Black and Hispanic populations) to enable disparity analysis without excessive granularity. Geographic identifiers are essential for merging datasets, while population totals serve as denominators for calculating meaningful access percentages at both tract and county levels.
+
+|Column Name |Data Type|Description|Example|Notes|
+|-----------------|------------|------------------------------|---------------------|----------------------------------|
+|State|String|State name|"Texas"|Use for filtering; standardize to "TX" for merging|
+|County|String|County name|"Harris County"|May need suffix standardization, merge key with Demographics|
+|Urban|Integer (Binary)|Flag indicating if tract is urban (1) or rural (0)|0, 1|Based on Census Bureau urban area definitions; use for urban/rural analysis|
+|PovertyRate|Float|Percentage of tract population living at or below federal poverty threshold|0.0 - 100.0 (typically 5-40)|Decimal format (e.g., 15.3 = 15.3%)|
+|Pop2010|Integer|Total population count from 2010 Census|1,500 - 8,000 (typical tract)|Denominator for all percentage calculations; validate against Demographics dataset|
+|TractLOWI|Integer|Total count of low-income population in tract|0 - 5,000|Denominator for low-income disparity calculations; low-income defined as ≤200% of poverty line|
+|lapop1|Integer|Population count beyond 1 mile from supermarket|0 - 6,000|Use to calculate PercentLowAccess = (lapop1/Pop2010)*100; primary food access indicator|
+|lalowi1|Integer|Low income population count beyond 1 mile from supermarket|0 - 4,000|Use to calculate PercentLowIncomeLowAccess = (lalowi1/TractLOWI)*100; measures vulnerable population access|
+|lablack1|Integer|Black/African American population count with low access|0 - 3,000|Numerator for Black disparity ratio; compare to county-level PercentBlack|
+|lahisp1|Integer|Hispanic/Latino population count with low access|0 - 4,000|Numerator for Hispanic disparity ratio; compare to county-level PercentHispanic|
+
+## U.S. County Demographics (10 columns)
+
+We select these 10 columns from the original 43 to provide socioeconomic context for food access patterns without overwhelming the analysis. The focus is on variables directly relevant to our research questions: income and education as economic indicators, age structure to identify vulnerable populations, and detailed racial/ethnic composition to enable disparity calculations. We exclude employment, housing, and business ownership variables as they are less directly related to food access outcomes. The 2010 population figures align temporally with the USDA food access data for valid comparisons.
+
+|Column Name |Data Type|Description|Example|Notes|
+|----------------------|--------------|--------------------------------------------|--------------|-----------------------------|
+|County|String|County name|"Harris County"|Merge key with USDA, need to add/remove "County" suffix for consistency|
+|State|String|State abbreviation or name|"TX" or "Texas"|Standardize to match USDA format ("TX" recommended)|
+|Population.2010 Population|Integer|County population from 2010 Census|825 - 4,000,000|Rename to: Population2010|
+|Population.Population per Square Mile|Float|Population density|1.5 - 3,000+|Rename to: PopDensity|
+|Income.Median Houseold Income|Integer|Median household income (2015-2019 ACS)|$30,000 - $100,000+|Rename to: MedianIncome|
+|Education.Bachelor's Degree or Higher|Float|Percentage of adults 25+ with bachelor's degree or higher (2015-2019 ACS)|8.0 - 60.0|Rename to: BachelorsDegreeRate|
+|Age.Percent Under 18 Years|Float|Percentage of population under age 18|15.0 - 35.0|Rename to: PercentUnder18|
+|Ethnicities.Black Alone|Float|Percentage of population identifying as Black/African American alone|0.5 - 50.0|Rename to: PercentBlack|
+|Ethnicities.Hispanic or Latino|Float|Percentage of population identifying as Hispanic/Latino (any race)|5.0 - 95.0|Rename to: PercentHispanic, key disparity metric|
+|Ethnicities.White Alone|Float|Percentage of population identifying as White alone|10.0 - 90.0|Rename to: PercentWhite|
+
+
+## USDA Food Composition (9 columns)
+
+We retain these 9 columns from the original 38 to create a focused nutritional profile without excessive micronutrient detail. The selection emphasizes macronutrients that define food quality—protein for satiety, fiber as a health indicator, and sugar as a marker of processed foods. We keep only two micronutrients (Vitamin A and calcium) as they are most commonly deficient in food desert populations and represent broader nutritional adequacy. This streamlined approach enables clear categorization of "nutrient-dense" versus "empty calorie" foods while avoiding the analytical complexity of tracking dozens of vitamins and minerals.
+
+|Column Name |Data Type|Description|Example|Notes|
+|------------------|--------|--------------------------------------------|--------------|------------------------------|
+|Category|String|General food category assigned by USDA|"Milk", "Beef Product"| Use for grouping in nutrition|
+|Description|String|Full description of food item|"Milk, whole, 3.25% milkfat"|May contain formatting inconsistencies|
+|Data.Protein|Float|Protein content|0.0 - 90.0(g)|Rename to: Protein; high values in meat, fish, legumes| |Data.Carbohydrate|Float|Total carbohydrate content (by difference)|0.0 - 100.0(g)|Rename to: Carbohydrate; high in grains, fruits, sugars|
+|Data.Fiber|Float|Dietary fiber content|0.0 - 40.0(g)|Rename to: Fiber; quality indicator|
+|Data.Sugar Total|Float|Total sugar content|0.0 - 100.0(g)|Rename to: SugarTotal; quality indicator; high = worse (candies, sodas)|
+|Data.Fat.Total Lipid|Float|Total fat content|0.0 - 100.0(g)|Rename to: TotalFat; high in oils, nuts, fatty meats|
+|Data.Vitamins.Vitamin A - RAE|Integer|Vitamin A content as Retinol Activity Equivalents|0 - 20,000+(mcg)|Rename to: VitaminA; high in orange vegetables, dairy, liver|
+|Data.Major Minerals.Calcium|Integer|Calcium content|0 - 2,000+(mg)|Rename to: Calcium; high in dairy, leafy greens, fortified foods|
+
+
