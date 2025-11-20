@@ -1,0 +1,922 @@
+---
+title: "Food Access & Nutrition Equity in Texas - R_tidyverse"
+subtitle: "Data Wrangling - Project Workflow and Report (Pairs)"
+date: today
+author: 
+  - Chi-Tse Chiang(cc79734)
+  - Cian-Rong Chen(cc79648)
+format:
+  html:
+    toc: true
+    embed-resources: true
+mainfont: TeX Gyre Schola
+monofont: JetBrainsMono Nerd Font
+mathfont: TeX Gyre Schola Math
+---
+
+# Summary
+
+This project aims to develop a data wrangling pipeline that integrates three datasets related to **food access**, **nutritional quality**, and **socioeconomic disparities** in Texas. Using data from the ***USDA Food Access Research Atlas***, ***CORGIS County Demographics dataset***, and ***CORGIS Food Nutrition*** dataset. The pipeline is implemented across four technical environments:
+
+- Python with Pandas
+- R with tidyverse
+- SQL
+- Excel
+
+The resulting clean dataset enables exploration of how food accessibility in Texas intersects with nutritional availability and demographic factors such as poverty or race/ethnicity. This work emphasizes the technical process of data wrangling and reproducible pipeline development, providing a foundation for future research into food security and health equity disparities across Texas communities.
+
+# Data Sources
+##USDA Food Access Research Atlas
+
+**Source**: [USDA Data Products](https://www.ers.usda.gov/data-products/food-access-research-atlas)
+
+![](FoodAccessResearchAtlas_datasource.png)
+[72535rows x 147 columns]
+
+Provides census-tract-level indicators of supermarket accessibility and food access challenges for different demographic groups. Includes population, housing, income, race, SNAP benefits, and geographic accessibility measures (e.g., low-income populations living >1 mile from a grocery store).
+
+**Wrangling Issues**:
+
+- Very wide (147 columns) and long (72,000+ rows) dataset requiring subsetting to 10–15 meaningful columns
+- Needs standardization of county and state names for **merging**.
+- Requires treatment of missing or 0 placeholder values
+- Census tract-level data must be aggregated to county level to match other datasets
+
+## U.S. County Demographics(From 2010s)
+
+**Source**: [CORGIS Dataset Project, County Demographics](https://corgis-edu.github.io/corgis/csv/county_demographics/)
+
+![](County_demographics.png)
+[3140rows x 43 columns]
+
+County-level data from 2010–2019 across the U.S., including age distribution, education, employment, ethnicity, household income, housing characteristics, and health-related statistics like travel time and veteran status.
+
+**Wrangling Issues**:
+
+- **Filtering** to only Texas counties from national dataset.
+- **Missing values** encoded as -1 need identification and handling.
+- Long dot-separated column names (e.g., Ethnicities.White Alone) require **renaming** and flattening for usability.
+- County and state name standardization needed to **match** with USDA Food Access Atlas
+
+## USDA Food Composition 
+
+**Source**: [CORGIS Dataset Project, Food](https://corgis-edu.github.io/corgis/csv/food/)
+
+![](Food_datasource.png)
+[7084rows x 38columns] 
+
+Contains nutritional breakdowns of thousands of foods, with fields for macronutrients (protein, fat, carbohydrates), vitamins (A, C, B12, etc.), and minerals (calcium, iron, magnesium). Each row represents a distinct food item.
+
+**Wrangling Issues**:
+
+- Contains 60+ nutrient columns requiring reduction to 5–10 most relevant variables.
+- Food names contain **formatting synonyms** (e.g., "Milk, human" vs "Human milk") requiring text standardization.
+- **Grouping** by food type (e.g., "Dairy", "Meat", "Vegetables") for analysis.
+- Measurements use different units (grams, mg, mcg) that must be documented for proper interpretation.
+
+
+# Selected Columns
+
+##USDA Food Access Research Atlas (10 columns)
+
+We retain these 11 columns from the original 147 to capture essential food access metrics while eliminating redundancy. The selected variables focus on the standard 1-mile threshold for urban areas and 10-mile threshold for rural areas, as this represents the USDA's primary food desert definition. We keep only the two largest racial/ethnic minority groups in Texas (Black and Hispanic populations) to enable disparity analysis without excessive granularity. Geographic identifiers are essential for merging datasets, while population totals serve as denominators for calculating meaningful access percentages at both tract and county levels.
+
+|Column Name |Data Type|Description|Example|Notes|
+|-----------------|------------|------------------------------|---------------------|----------------------------------|
+|State|String|State name|"Texas"|Use for filtering; standardize to "TX" for merging|
+|County|String|County name|"Harris County"|May need suffix standardization, merge key with Demographics|
+|Urban|Integer (Binary)|Flag indicating if tract is urban (1) or rural (0)|0, 1|Based on Census Bureau urban area definitions; use for urban/rural analysis|
+|PovertyRate|Float|Percentage of tract population living at or below federal poverty threshold|0.0 - 100.0 (typically 5-40)|Decimal format (e.g., 15.3 = 15.3%)|
+|Pop2010|Integer|Total population count from 2010 Census|1,500 - 8,000 (typical tract)|Denominator for all percentage calculations; validate against Demographics dataset|
+|TractLOWI|Integer|Total count of low-income population in tract|0 - 5,000|Denominator for low-income disparity calculations; low-income defined as ≤200% of poverty line|
+|lapop1|Integer|Population count beyond 1 mile from supermarket|0 - 6,000|Use to calculate PercentLowAccess = (lapop1/Pop2010)*100; primary food access indicator|
+|lalowi1|Integer|Low income population count beyond 1 mile from supermarket|0 - 4,000|Use to calculate PercentLowIncomeLowAccess = (lalowi1/TractLOWI)*100; measures vulnerable population access|
+|lablack1|Integer|Black/African American population count with low access|0 - 3,000|Numerator for Black disparity ratio; compare to county-level PercentBlack|
+|lahisp1|Integer|Hispanic/Latino population count with low access|0 - 4,000|Numerator for Hispanic disparity ratio; compare to county-level PercentHispanic|
+
+## U.S. County Demographics (10 columns)
+
+We select these 10 columns from the original 43 to provide socioeconomic context for food access patterns without overwhelming the analysis. The focus is on variables directly relevant to our research questions: income and education as economic indicators, age structure to identify vulnerable populations, and detailed racial/ethnic composition to enable disparity calculations. We exclude employment, housing, and business ownership variables as they are less directly related to food access outcomes. The 2010 population figures align temporally with the USDA food access data for valid comparisons.
+
+|Column Name |Data Type|Description|Example|Notes|
+|----------------------|--------------|--------------------------------------------|--------------|-----------------------------|
+|County|String|County name|"Harris County"|Merge key with USDA, need to add/remove "County" suffix for consistency|
+|State|String|State abbreviation or name|"TX" or "Texas"|Standardize to match USDA format ("TX" recommended)|
+|Population.2010 Population|Integer|County population from 2010 Census|825 - 4,000,000|Rename to: Population2010|
+|Population.Population per Square Mile|Float|Population density|1.5 - 3,000+|Rename to: PopDensity|
+|Income.Median Houseold Income|Integer|Median household income (2015-2019 ACS)|$30,000 - $100,000+|Rename to: MedianIncome|
+|Education.Bachelor's Degree or Higher|Float|Percentage of adults 25+ with bachelor's degree or higher (2015-2019 ACS)|8.0 - 60.0|Rename to: BachelorsDegreeRate|
+|Age.Percent Under 18 Years|Float|Percentage of population under age 18|15.0 - 35.0|Rename to: PercentUnder18|
+|Ethnicities.Black Alone|Float|Percentage of population identifying as Black/African American alone|0.5 - 50.0|Rename to: PercentBlack|
+|Ethnicities.Hispanic or Latino|Float|Percentage of population identifying as Hispanic/Latino (any race)|5.0 - 95.0|Rename to: PercentHispanic, key disparity metric|
+|Ethnicities.White Alone|Float|Percentage of population identifying as White alone|10.0 - 90.0|Rename to: PercentWhite|
+
+
+## USDA Food Composition (9 columns)
+
+We retain these 9 columns from the original 38 to create a focused nutritional profile without excessive micronutrient detail. The selection emphasizes macronutrients that define food quality—protein for satiety, fiber as a health indicator, and sugar as a marker of processed foods. We keep only two micronutrients (Vitamin A and calcium) as they are most commonly deficient in food desert populations and represent broader nutritional adequacy. This streamlined approach enables clear categorization of "nutrient-dense" versus "empty calorie" foods while avoiding the analytical complexity of tracking dozens of vitamins and minerals.
+
+|Column Name |Data Type|Description|Example|Notes|
+|------------------|--------|--------------------------------------------|--------------|------------------------------|
+|Category|String|General food category assigned by USDA|"Milk", "Beef Product"| Use for grouping in nutrition|
+|Description|String|Full description of food item|"Milk, whole, 3.25% milkfat"|May contain formatting inconsistencies|
+|Data.Protein|Float|Protein content|0.0 - 90.0(g)|Rename to: Protein; high values in meat, fish, legumes| |Data.Carbohydrate|Float|Total carbohydrate content (by difference)|0.0 - 100.0(g)|Rename to: Carbohydrate; high in grains, fruits, sugars|
+|Data.Fiber|Float|Dietary fiber content|0.0 - 40.0(g)|Rename to: Fiber; quality indicator|
+|Data.Sugar Total|Float|Total sugar content|0.0 - 100.0(g)|Rename to: SugarTotal; quality indicator; high = worse (candies, sodas)|
+|Data.Fat.Total Lipid|Float|Total fat content|0.0 - 100.0(g)|Rename to: TotalFat; high in oils, nuts, fatty meats|
+|Data.Vitamins.Vitamin A - RAE|Integer|Vitamin A content as Retinol Activity Equivalents|0 - 20,000+(mcg)|Rename to: VitaminA; high in orange vegetables, dairy, liver|
+|Data.Major Minerals.Calcium|Integer|Calcium content|0 - 2,000+(mg)|Rename to: Calcium; high in dairy, leafy greens, fortified foods|
+
+# Wrangling Process
+```{r}
+library(tidyverse)
+```
+# Step 1 : Data Loading
+
+## Step 1.1
+
+```{r}
+usda_atlas <- read_csv('FoodAccessResearchAltas.csv')
+county_demographics <- read_csv('county_demographics.csv')
+food_nutrition <- read_csv('food.csv')
+```
+```{r}
+# Check dimensions (equivalent to .shape in pandas)
+cat("USDA_ATLAS shape(rows x columns):", dim(usda_atlas), "\n")
+cat("County_Demographics shape(rows x columns):", dim(county_demographics), "\n")
+cat("Food_Nutrition shape(rows x columns):", dim(food_nutrition), "\n")
+```
+## Step 1.2
+
+Create a synonym mapping dictionary to standardize state names
+
+```{r}
+# We standardize variations of state names to Title Case
+
+usda_atlas <- usda_atlas %>%
+  mutate(State = case_when(
+    State %in% c('TX', 'texas', 'TEXAS', 'Texas') ~ 'Texas',
+    State %in% c('CA', 'california', 'CALIFORNIA', 'California') ~ 'California',
+    State %in% c('NY', 'new york', 'NEW YORK', 'New york') ~ 'New York',
+    TRUE ~ State # Keep original if not in list
+  ))
+```
+
+```{r}
+county_demographics <- county_demographics %>%
+  mutate(State = case_when(
+    State %in% c('TX', 'texas', 'TEXAS', 'Texas') ~ 'Texas',
+    State %in% c('CA', 'california', 'CALIFORNIA', 'California') ~ 'California',
+    State %in% c('NY', 'new york', 'NEW YORK', 'New york') ~ 'New York',
+    TRUE ~ State
+  ))
+```
+
+## Step 1.3 : Data Filter
+
+First filter for the 3 states of interest
+
+```{r}
+usda_atlas <- usda_atlas %>%
+  filter(State %in% c('Texas', 'California', 'New York'))
+
+county_demographics <- county_demographics %>%
+  filter(State %in% c('Texas', 'California', 'New York'))
+```
+
+We successfully standardize state names and store rows only contains these three state.
+
+```{r}
+cat("usda_atlas unique states:", length(unique(usda_atlas$State)), "\n")
+cat("county_demographics unique states:", length(unique(county_demographics$State)), "\n")
+```
+Texas Filtering (Rows). Now let's filter for Texas data only.
+
+**Filter USDA Atlas for Texas**
+
+```{r}
+usda_texas <- usda_atlas %>%
+  filter(State == 'Texas')
+
+cat("Texas tracts:", nrow(usda_texas), "\n")
+head(usda_texas)
+```
+
+**Filter County Demographics for Texas**
+```{r}
+county_demographics_texas <- county_demographics %>%
+  filter(State == 'Texas')
+
+cat("Texas counties:", n_distinct(county_demographics_texas), "\n")
+head(county_demographics_texas)
+
+```
+**Keep all Food Nutrition data (not geographically specific)**
+
+# Step 2 : Columns Filtering
+
+We now have:
+- usda_texas - usda data in Texas
+- county_demographics_texas - counties data in Texas
+- food_nutrition - original(cleaned)
+
+## Select Essential Columns -> filter()
+
+Now let's subset to only the essential columns needed for analysis.
+
+### USDA Food Access Atlas (10 columns)
+
+* **PovertyRate** : Percentage of tract population living at or below federal poverty threshold
+* **lapop1** : Population count beyond 1 mile from supermarket
+* **lalowi1** : Low income population count beyond 1 mile from supermarket
+* **lablack1** : Black/African American population count with low access
+* **lahisp1** : Hispanic/Latino population count with low access
+* **TractLOWI** : Total count of low-income population in tract
+
+```{r}
+usda_texas_subset <- usda_texas %>%
+  select(State, County, Urban, PovertyRate, Pop2010,
+         lapop1, lalowi1, lablack1, lahisp1, TractLOWI)
+```
+
+Verify dimensions
+
+```{r}
+cat("USDA subset shape:", paste(dim(usda_texas_subset), collapse = " x "))
+```
+### County Demographics (10 columns)
+
+* **Income.Median Houseold Income** :
+
+This includes the income of the householder and all other individuals 15 years old and over in the household whether they are related to the householder or not. Because many households consist of only one person average household income is usually less than average family income.
+
+* **Population.Population per Square Mile** : Population density
+
+```{r}
+# Note: We use backticks because column names contain spaces and dots.
+county_demographics_subset <- county_demographics_texas %>%
+  select(County, State,
+         `Population.2010 Population`,
+         `Income.Median Houseold Income`,          
+         `Education.Bachelor's Degree or Higher`,
+         `Age.Percent Under 18 Years`,
+         `Ethnicities.Black Alone`,
+         `Ethnicities.Hispanic or Latino`,
+         `Ethnicities.White Alone`,
+         `Population.Population per Square Mile`)
+```
+
+Verify dimensions
+
+```{r}
+cat("Demographics subset shape:", paste(dim(county_demographics_subset), collapse = " x "))
+```
+### Food Nutrition (9 columns)
+
+```{r}
+food_nutrition_subset <- food_nutrition %>%
+  select(Category, Description,
+         `Data.Protein`,
+         `Data.Carbohydrate`,
+         `Data.Fiber`,
+         `Data.Sugar Total`,
+         `Data.Fat.Total Lipid`,
+         `Data.Vitamins.Vitamin A - RAE`,
+         `Data.Major Minerals.Calcium`)
+```
+
+```{r}
+cat("Food subset shape:", paste(dim(food_nutrition_subset), collapse = " x "))
+```
+### Preview the data
+```{r}
+head(usda_texas_subset)
+head(county_demographics_subset)
+head(food_nutrition_subset)
+```
+# Step 3 : Data Cleaning
+
+We now have:
+- usda_texas_subset - usda data filter 10 columns
+- county_demographics_subset - counties data filter 10 columns
+- food_nutrition_subset - food nutrition data filter 9 columns
+
+## Step 3.1 : Handle Missing Values
+
+### usda_texas_subset
+
+First, let's check for missing values in the USDA Atlas: 
+
+We should understand why drop this NULL and explain why need to drop
+
+```{r}
+usda_texas_cleaned <- usda_texas_subset %>%
+  drop_na()
+```
+
+Verification
+
+```{r}
+cat("Original rows:", nrow(usda_texas_subset),"\n")
+cat("After removing NULLs:", nrow(usda_texas_cleaned),"\n")
+cat("Rows removed:", nrow(usda_texas_subset) - nrow(usda_texas_cleaned),"\n")
+```
+Why? Paste it actually have NULL in it
+
+We force the population columns to be numeric first. If they contain strings like "NULL", this will turn them into NA, then drop_na() will successfully remove them.
+
+```{r}
+usda_texas_cleaned <- usda_texas_subset %>%
+  mutate(
+    lapop1 = as.numeric(lapop1),
+    lalowi1 = as.numeric(lalowi1),
+    lablack1 = as.numeric(lablack1),
+    lahisp1 = as.numeric(lahisp1)
+  ) %>%
+  drop_na()
+```
+```{r}
+cat("Original rows:", nrow(usda_texas_subset),"\n")
+cat("After removing NULLs:", nrow(usda_texas_cleaned),"\n")
+cat("Rows removed:", nrow(usda_texas_subset) - nrow(usda_texas_cleaned),"\n")
+```
+**Check for zeros in key columns (zeros are valid - they mean "no population beyond threshold"):**
+
+```{r}
+cat("Zeros in Pop2010:", sum(usda_texas_cleaned$Pop2010 == 0), "\n")
+
+cat("Zeros in TractLOWI:", sum(usda_texas_cleaned$TractLOWI == 0), "\n")
+```
+### county_demographics_subset
+
+County Demographics - Check for -1 to NULL, then Remove:
+
+```{r}
+county_demographics_cleaned <- county_demographics_subset %>%
+  mutate(
+    across(where(is.numeric), ~na_if(., -1))
+  ) %>%
+  drop_na()
+```
+
+```{r}
+cat("Original Demographics rows:", nrow(county_demographics_subset),"\n")
+cat("Demographics rows after cleaning:", nrow(county_demographics_cleaned),"\n")
+```
+### food_nutrtion_subset
+
+Food Nutrition - Check and Remove NULL values:
+
+```{r}
+sum(is.na(food_nutrition_subset))
+```
+Since there's no missing value or NULL, we can just move to next step
+
+## Step 3.2 : Standardize Column Names
+
+Now we have three clean datasets with NO missing values:
+- usda_texas_cleaned
+- county_demographics_cleaned
+- food_nutrition_subset
+
+### County Demographics - Flatten dot notation -> county_demographics_renamed
+
+```{r}
+# Rename County Demographics columns
+county_demographics_renamed <- county_demographics_cleaned %>%
+  rename(
+    Population2010 = `Population.2010 Population`,
+    MedianIncome = `Income.Median Houseold Income`,
+    Pct_BachelorsOrHigher = `Education.Bachelor's Degree or Higher`,
+    Pct_Under18 = `Age.Percent Under 18 Years`,
+    Pct_Black = `Ethnicities.Black Alone`,
+    Pct_Hispanic = `Ethnicities.Hispanic or Latino`,
+    Pct_White = `Ethnicities.White Alone`,
+    PopDensity = `Population.Population per Square Mile`
+  )
+
+cat("Renamed County Columns:,","\n")
+print(colnames(county_demographics_renamed))
+```
+
+### Food Nutrition - Simplify nested names -> food_nutrtion_renamed
+
+```{r}
+food_nutrition_renamed <- food_nutrition_subset %>%
+  rename(
+    Protein = `Data.Protein`,
+    Carbohydrate = `Data.Carbohydrate`,
+    Fiber = `Data.Fiber`,
+    SugarTotal = `Data.Sugar Total`,
+    TotalFat = `Data.Fat.Total Lipid`,
+    VitaminA = `Data.Vitamins.Vitamin A - RAE`,
+    Calcium = `Data.Major Minerals.Calcium`
+  )
+
+cat("Renamed Food Columns:","\n")
+print(colnames(food_nutrition_renamed))
+```
+## Step 3.3 : Verify Geographic Names
+
+### Count unique counties to ensure we have the expected number (approx 254 for Texas)
+
+```{r}
+print(paste("Unique counties in USDA:", n_distinct(usda_texas_cleaned$County)))
+print(paste("Unique counties in Demographics:", n_distinct(county_demographics_renamed$County)))
+```
+Because we drop a NULL value in county_demographics dataset, so the counties would one less than USDA.
+
+# Step 4 : Data Transformation
+
+We now have:
+* usda_texas_cleaned - cleaned USDA data with standardized State
+* county_demographics_renamed - cleaned demographics with renamed columns
+* food_nutrition_renamed - cleaned food data with renamed columns
+
+## Step 4.1 : Calculate Derived Metrics (USDA Atlas)
+
+### Calculate PercentLowAccess (% of tract population >1 mile from supermarket)
+
+What percentage of the tract's total population lives more than 1 mile from a supermarket?
+
+```{r}
+usda_with_metrics <- usda_texas_cleaned %>%
+  mutate(
+    PercentLowAccess = (lapop1 / Pop2010) * 100,
+  )
+```
+
+```{r}
+# View summary statistics
+print("Summary of PercentLowAccess:")
+summary(usda_with_metrics$PercentLowAccess)
+```
+
+Example:
+
+* Census Tract A has POP2010 = 5,000 people total
+* lapop1 = 1,500 people live >1 mile from supermarket
+* PercentLowAccess = (1,500 / 5,000) × 100 = 30%
+* Interpretation: 30% of this tract's population has low access to food
+
+### PercentLowIncomeLowAccess (% of low-income population with low access)
+
+What it means: Among the low-income population in this tract, what percentage also has low food access?
+
+```{r}
+usda_with_metrics <- usda_texas_cleaned %>%
+  mutate(
+    PercentLowIncomeLowAccess = (lalowi1 / TractLOWI) * 100
+  )
+```
+
+```{r}
+print("Summary of PercentLowIncomeLowAccess:")
+summary(usda_with_metrics$PercentLowIncomeLowAccess)
+```
+
+Example:
+* Census Tract B has TractLOWI = 2,000 low-income people
+* lalowi1 = 800 low-income people with low access
+* PercentLowIncomeLowAccess = (800 / 2,000) × 100 = 40%
+* Interpretation: 40% of low-income residents have low food access
+
+**Why These Calculations Matter**
+Without percentages (raw counts only):
+
+* Tract 1: 1,000 people with low access (sounds bad)
+* Tract 2: 500 people with low access (sounds better)
+
+**BUT if we look at percentages**
+
+* Tract 1: 1,000 out of 10,000 = 10% low access (not too bad)
+* Tract 2: 500 out of 1,000 = 50% low access (much worse!)
+
+Percentages allow fair comparisons between large urban tracts and small rural tracts.
+
+### Verify New Columns
+
+```{r}
+print(colnames(usda_with_metrics))
+```
+
+## Step 4.2 : Categorize Nutrition (Food Nutrition) 
+
+### Group by Category and Calculate Mean Nutritional Values
+
+```{r}
+food_nutrition_grouped <- food_nutrition_renamed %>%
+  group_by(Category) %>%
+  summarize(
+    Protein = mean(Protein),
+    Carbohydrate = mean(Carbohydrate),
+    Fiber = mean(Fiber),
+    SugarTotal = mean(SugarTotal),
+    TotalFat = mean(TotalFat),
+    VitaminA = mean(VitaminA),
+    Calcium = mean(Calcium)
+  )
+```
+
+### Wider/Longer
+
+We convert the individual nutrient columns into key-value pairs
+
+```{r}
+food_nutrition_long <- food_nutrition_grouped %>%
+  pivot_longer(
+    cols = -Category, 
+    names_to = "Nutrient", 
+    values_to = "MeanValue"
+  )
+
+# Verify dimensions and preview
+head(food_nutrition_long, 10)
+```
+We convert the long format back to wide format.
+
+* id_cols = Category identifies the rows
+* names_from = Nutrient gets the new column headers
+* values_from = MeanValue gets the cell values
+
+```{r}
+food_nutrition_pivoted <- food_nutrition_long %>%
+  pivot_wider(
+    id_cols = Category,
+    names_from = Nutrient,
+    values_from = MeanValue
+  )
+
+head(food_nutrition_pivoted)
+```
+
+
+### Categorize Nutritional Values
+
+[FDA Daily Value](https://www.fda.gov/food/nutrition-facts-label/daily-value-nutrition-and-supplement-facts-labels)
+
+#### SugarTotal
+
+High sugar intake is linked to health issues; categorizing helps identify high-sugar vs low-sugar foods.
+
+Thresholds:
+
+* High: > 15 grams (>25% of 50g daily max)
+* Medium: 5-15 grams
+* Low: < 5 grams
+
+#### TotalFat
+
+Important for understanding nutritional quality and health implications.
+
+Thresholds (per 100g serving):
+
+* High: > 20 grams
+* Medium: 5-20 grams
+* Low: < 5 grams
+
+#### Protein
+
+Helps identify protein-rich foods vs lower-protein options.
+
+Thresholds (per 100g serving):
+
+* High: > 15 grams (excellent protein source)
+* Medium: 5-15 grams
+* Low: < 5 grams
+
+#### Create Final Food_Nutrition dataset
+
+```{r}
+# Categorize Sugar, Fat, and Protein
+food_nutrition_final <- food_nutrition_pivoted %>%
+  mutate(
+    # Categorize Sugar
+    Sugar_Level = case_when(
+      SugarTotal > 15 ~ "High",
+      SugarTotal >= 5 ~ "Medium",
+      TRUE ~ "Low"
+    ),
+    # Categorize Fat
+    Fat_Level = case_when(
+      TotalFat > 20 ~ "High",
+      TotalFat >= 5 ~ "Medium",
+      TRUE ~ "Low"
+    ),
+    # Categorize Protein
+    Protein_Level = case_when(
+      Protein > 15 ~ "High",
+      Protein >= 5 ~ "Medium",
+      TRUE ~ "Low"
+    )
+  )%>%
+  
+  # Select only the essential columns for the final dataset
+  select(Category, Calcium, Carbohydrate, Fiber, VitaminA, 
+         Sugar_Level, Fat_Level, Protein_Level)
+
+# Verification
+print(paste("Final Food Nutrition shape:", paste(dim(food_nutrition_final), collapse = " x ")))
+head(food_nutrition_final)
+```
+# Step 5 : Data Aggregation
+
+We now have:
+* usda_with_metrics - USDA data with two new columns (pct_lowaccess-> tracts have low access , pct_lowincomelowaccess -> low income with low access)
+* county_demographics_renamed - cleaned demographics with renamed columns
+* food_nutrition_final - final food nutrition data
+
+## Step 5.1: Aggregate USDA Atlas to County Level
+
+```{r}
+cat("Number of tracts:", n_distinct(usda_with_metrics), "\n")
+cat("Number of unique counties:", n_distinct(unique(usda_with_metrics$County)), "\n")
+```
+```{r}
+usda_county_agg <- usda_with_metrics %>%
+  group_by(County, State) %>%
+  summarize(
+    TotalPopulation = sum(Pop2010),
+    TotalLowAccessPop = sum(lapop1),
+    TotalLowIncomePop = sum(TractLOWI),
+    TotalLowIncomeLowAccessPop = sum(lalowi1),
+    TotalBlackLowAccess = sum(lablack1),
+    TotalHispanicLowAccess = sum(lahisp1),
+    # In Python: 'Urban': ['sum', 'count']
+    # In R: sum() gets the count of urban tracts (1=Urban, 0=Rural), 
+    #       n() gets the total count of tracts
+    CountUrbanTracts = sum(Urban),
+    TotalTracts = n(),
+    .groups = "drop" # Equivalent to .reset_index() in pandas
+  )
+```
+
+Verify aggregation
+
+```{r}
+print(paste("Number of unique counties:", n_distinct(usda_county_agg)))
+head(usda_county_agg)
+```
+## Step 5.2 : Calculate Weighted Average Poverty Rate
+
+**Purpose**
+
+* Calculate a county-level poverty rate that accurately represents the entire county population by weighting each census tract's poverty rate by its population size.
+
+```{r}
+poverty_weighted <- usda_with_metrics %>%
+  mutate(
+    PovertyWeighted = PovertyRate * Pop2010,
+    PopWeight = Pop2010
+  ) %>%
+  group_by(County, State) %>%
+  summarize(
+    SumPovertyWeighted = sum(PovertyWeighted),
+    SumPopWeight = sum(PopWeight),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    AvgPovertyRate = SumPovertyWeighted / SumPopWeight
+  ) %>%
+  select(County, State, AvgPovertyRate)
+```
+
+**Process**
+
+1. We used the mutate() method to create two intermediate columns: PovertyWeighted (poverty rate multiplied by population) and PopWeight (population).
+2. We grouped the data by County and State, summed these weighted values, and calculated the final weighted average poverty rate.
+3. This approach ensures that larger census tracts have proportionally more influence on the county's overall poverty rate, giving us a more accurate representation than a simple average would provide.
+
+
+```{r}
+print(paste("Weighted poverty shape:", paste(dim(poverty_weighted), collapse = " x ")))
+head(poverty_weighted)
+```
+**Outcome**
+
+A clean dataset with 254 Texas counties, each with a single, population-weighted poverty rate that can be used for county-level analysis.
+
+## Step 5.3 : Add Derived Percentage Metrics to County Aggregation
+
+**Purpose:**
+
+Transform raw population counts into meaningful percentages that allow for fair comparisons between counties of different sizes.
+
+```{r}
+# Create percentage columns using mutate()
+
+usda_county_agg_final <- usda_county_agg %>%
+  mutate(
+    Pct_LowAccess = (TotalLowAccessPop / TotalPopulation) * 100,
+    Pct_LowIncome_LowAccess = (TotalLowIncomeLowAccessPop / TotalLowIncomePop) * 100,
+    Pct_Urban = (CountUrbanTracts / TotalTracts) * 100
+  ) %>%
+  # We then merged these derived metrics with the weighted poverty rate calculated in Step 5.2, creating a comprehensive county-level dataset.
+  left_join(poverty_weighted, by = c("County", "State"))
+```
+
+
+**Process:**
+
+Using the mutate method with lambda functions, we calculated three key percentage metrics:
+
+1. Pct_LowAccess: The percentage of the county population living more than 1 mile from a supermarket
+2. Pct_LowIncome_LowAccess: The percentage of low-income residents who also face low food access
+3. Pct_Urban: The percentage of census tracts in the county classified as urban
+
+
+**Verification**
+
+```{r}
+print(paste("Final shape:", paste(dim(usda_county_agg_final), collapse = " x ")))
+head(usda_county_agg_final)
+```
+
+# Step 6 : Data Merging
+
+We now have:
+- **usda_county_agg_final** - USDA data covers population(overall, lowaccess,income), race/ethnicity, percentage of low accessincome, urban/rural,poverty
+- **county_demographics_renamed** - cleaned demographics with renamed columns
+- **food_nutrition_final** - final food nutrition data
+
+## Step 6.1: Prepare County Demographics
+
+```{r}
+county_demo_final <- county_demographics_renamed
+
+print(paste("County Demographics shape:", paste(dim(county_demo_final), collapse = " x ")))
+```
+
+## Step 6.2: Merge USDA and County Demographics
+
+**Process**
+
+***inner merge*** on County and State columns, ensuring that only counties present in both datasets were included.
+
+This merge operation links food access metrics (like percentage of population with low access) with demographic factors (like median income and education levels).
+
+```{r}
+texas_county_merged <- usda_county_agg_final %>%
+  inner_join(county_demo_final, by = c("County", "State"))
+```
+
+Verification
+
+```{r}
+print(paste("Merged Shape:", paste(dim(texas_county_merged), collapse = " x ")))
+print(colnames(texas_county_merged))
+head(texas_county_merged)
+```
+**Outcome**
+
+A unified dataset containing both food access metrics and demographic information for 254 Texas counties.
+
+## Step 6.3: Select Only Essential Columns for Final Dataset
+
+Select the specific 12 columns needed for the final analysis
+
+**Process**
+
+We carefully selected columns that directly address our research questions about food access disparities:
+
+* <u>Geographic identifiers</u>: County, State
+* <u>Population</u>: TotalPopulation, PopDensity
+* <u>Food Access</u>: Pct_LowAccess, Pct_LowIncome_LowAccess, Pct_Urban
+* <u>Economic</u>: AvgPovertyRate, MedianIncome
+* <u>Education</u>: Pct_BachelorsOrHigher
+* <u>Demographics</u>: Pct_Hispanic, Pct_Black
+
+```{r}
+texas_county_final <- texas_county_merged %>%
+  select(
+    County, 
+    State, 
+    TotalPopulation, 
+    Pct_LowAccess, 
+    Pct_LowIncome_LowAccess, 
+    Pct_Urban, 
+    AvgPovertyRate, 
+    MedianIncome, 
+    Pct_BachelorsOrHigher, 
+    Pct_Hispanic, 
+    Pct_Black, 
+    PopDensity
+  )
+```
+
+Final Verification
+```{r}
+print(paste("Final shape:", paste(dim(texas_county_final), collapse = " x ")))
+head(texas_county_final)
+```
+
+**Outcome**
+
+A streamlined, analysis-ready dataset with only the columns needed to answer questions about urban vs. rural disparities, poverty-access correlations, and demographic differences in food access.
+
+# Step 7 : Dataset Preparation
+
+
+## Step 7.1 : Save to "Texas County Merged Dataset"
+
+```{r}
+write_csv(texas_county_final, "Texas_County_Merged.csv")
+```
+
+**Verification**
+
+```{r}
+print(paste("Shape:", paste(dim(texas_county_final), collapse = " x ")))
+print(paste("Columns:", ncol(texas_county_final)))
+head(texas_county_final)
+```
+
+
+## Step 7.2 : Save to "Food_Nutrition_Final"
+
+```{r}
+write_csv(food_nutrition_final, "Food_Nutrition_Final.csv")
+```
+
+**Verification**
+
+```{r}
+print(paste("Shape:", paste(dim(food_nutrition_final), collapse = " x ")))
+print(paste("Columns:", ncol(food_nutrition_final)))
+head(food_nutrition_final)
+```
+
+# Step 8: Analysis with Visualizations
+
+```{r}
+# 1. Load the dataset
+texas_county <- read_csv("Texas_County_Merged.csv")
+
+# 2. Prepare the data for analysis (remove NAs for the specific columns)
+analysis_data <- texas_county %>%
+  filter(!is.na(AvgPovertyRate), !is.na(Pct_LowIncome_LowAccess))
+
+# 3. Create the Scatter Plot with Trend Line
+# geom_point: creates the scatter plot dots
+# geom_smooth: creates the trend line (method = "lm" for Linear Model)
+
+ggplot(analysis_data, aes(x = AvgPovertyRate, y = Pct_LowIncome_LowAccess)) +
+  # Add points with specific color and transparency
+  geom_point(color = "#F18F01", alpha = 0.6, size = 3) +
+  # Add linear trend line (dashed red)
+  geom_smooth(method = "lm", se = FALSE, color = "red", linetype = "dashed") +
+  # Add labels and title
+  labs(
+    x = "Average Poverty Rate (%)",
+    y = "% Low-Income Population with Low Access",
+    title = "Relationship Between Poverty and Food Access in Texas Counties"
+  ) +
+  # Use a clean theme
+  theme_minimal() +
+  # Add grid lines
+  theme(panel.grid.major = element_line(color = "grey90"))
+
+# 4. Calculate Correlation Coefficient
+# R uses cor() for correlation
+correlation <- cor(analysis_data$AvgPovertyRate, analysis_data$Pct_LowIncome_LowAccess)
+
+# Print results
+cat("\nCorrelation between Poverty Rate and Low-Income Low Access:", round(correlation, 3), "\n")
+cat("Number of counties analyzed:", nrow(analysis_data), "\n")
+```
+## Takeaways from these charts
+
+1. **Weak negative correlation (-0.073)**: Contrary to intuitive expectations, there is virtually no linear relationship between poverty rates and low-income food access in Texas counties. The trend line is nearly flat with a slight downward slope.
+
+2. **High variability across all poverty levels**: Counties with similar poverty rates show dramatically different food access outcomes. For example, counties with ~15% poverty rates range from 20% to 110% low-income low access.
+
+3. **Clustering around 50-70% food access**: Most counties fall in the 40-80% range for low-income food access regardless of poverty rate, suggesting other factors (geography, infrastructure, transportation) may be more influential than poverty alone.
+
+4. **Outliers at low poverty**: Several counties with poverty rates below 15% still have 90-140% low-income low access, indicating that even relatively affluent counties can face significant food access challenges.
+
+5. **No floor or ceiling effect**: Counties exist across the full spectrum of both variables, with no obvious threshold where food access dramatically improves or worsens.
+
+# Step 9 : Challenge and How We Approached
+
+Working through this three dataset food accessibility project presented a steady stream of challenges, from initial data exploration through the final merge operations. Though the individual steps weren't conceptually revolutionary, the cumulative effect of working with three large, messy datasets taught us that data wrangling is fundamentally about systematic problem-solving.
+
+Our first major challenge hit us during the initial data loading step. The USDA Food Access Research Atlas arrived with over 72,000 rows and 147 columns. We couldn't immediately tell which columns mattered for us Texas-focused data wrangling, and the huge volume made it tempting to just grab everything and figure it out later. Instead, We forced to slow down and examine the data dictionary, identifying which accessibility metrics actually aligned with my research questions about food deserts and low-income populations. This disciplined subsetting approach—reducing from 147 columns down to just 10-15 core variables—became a pattern I repeated with the County Demographics (43 columns) and Food Nutrition (38 columns) datasets. By the end, I had achieved an 86.8% dimension reduction across all three datasets, transforming 228 total columns into just 30 variables.
+
+Once we had manageable subsets, we encountered our next obstacle, which is inconsistent missing value representations. The County Demographics dataset used -1 as a missing value placeholder, the USDA Atlas mixed genuine zeros with missing data markers, and the Food Nutrition dataset contained standard NaN values. We couldn't simply apply one universal cleaning rule. Instead, we developed dataset-specific filtering out -1 values from demographics, carefully distinguishing between "no low-access population" (legitimate zero) versus "data not collected" (missing) in the food access data, and handling NaN values in the nutrition dataset. This taught us that missing data isn't a single problem with a single solution; it requires understanding what missingness means in each specific context.
+
+The census tract-to-county mapping challenge emerged during our merge planning phase. The Food Access Atlas operates at the census tract level, while County Demographics works with county-level aggregates. We initially worried about losing by aggregating tracts up to counties, but we realized this was actually necessary for our wrangling scope. The real challenge became ensuring we didn't accidentally duplicate data during the aggregation process or lose tracts that didn't cleanly map to our Texas county subset. We solved this by filtering for Texas first at the tract level, then carefully aggregating using sum functions for population counts and mean functions for rate-based metrics, always verifying our row counts before and after each transformation step.
+
+Perhaps our most frustrating challenge involved inconsistent naming conventions across datasets. County names appeared with and without "County" suffixes, state representations alternated between full names and abbreviations, and the Food Nutrition dataset contained food name variations that seemed designed to confound any analysis. Early on, we attempted to handle these variations through complex pattern matching during data import, building what essentially became a mental dictionary of name pairs. The breakthrough came when we realized we needed to standardize these values explicitly through dedicated transformation steps rather than trying to match variations during merges. For counties, I stripped suffixes and converted to title case. For states, I created a consistent Texas filter that could handle both "TX" and "Texas" representations.
+
+Our final major challenge involved determining the correct merge sequence and types. With three datasets coming from completely different sources, we had to map out which variables could serve as keys. We settled on a two-track approach: merging Food Access and County Demographics on county and state names (many-to-one, since multiple tracts map to each county), while keeping Food Nutrition as a standalone dataset that could later be linked through categorical analysis rather than direct merges. The trickiest part was ensuring we used inner joins to maintain only Texas-specific records while not accidentally dropping valid data due to name mismatches we hadn't yet caught.
+
+Looking back, we are particularly proud of an aspect of this project.
+
+* Our reduction strategy not only made the datasets manageable but actually improved their wrangling clarity. Rather than keeping every possible variable "just in case," we made deliberate choices about which metrics truly addressed my research questions, resulting in three clean, focused datasets that tell a coherent story about Texas food accessibility.
+
+Throughout this project, we learned that data wrangling excellence isn't about techniques or elegant one-liners. It's about systematic thinking, attention to detail, and the patience to verify each transformation step before moving forward. The encoding inconsistencies and subtle aggregation errors really taught me that success in data wrangling comes from developing a suspicious, verification-oriented mindset where you trust nothing until you've explicitly confirmed it works as intended.
+# Step 10 : Description of tool learning 
+
+
+
+
